@@ -9,7 +9,7 @@ LLM-tuning file injected into every future session.
 ## Install
 
 ```bash
-pip install mind
+pip install project-mind
 ```
 
 ## Setup (per project)
