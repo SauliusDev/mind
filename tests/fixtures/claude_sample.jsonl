@@ -1,0 +1,6 @@
+{"type":"permission-mode","permissionMode":"bypassPermissions","sessionId":"abc123"}
+{"parentUuid":null,"isSidechain":false,"type":"user","message":{"role":"user","content":[{"type":"text","text":"analyze the mind system and find inefficiencies"}]},"uuid":"msg1","timestamp":"2026-04-18T09:00:00.000Z"}
+{"parentUuid":"msg1","isSidechain":false,"type":"assistant","message":{"role":"assistant","id":"resp1","content":[{"type":"text","text":"The mind system has three issues: the transcript mechanism is dead..."}]},"timestamp":"2026-04-18T09:00:05.000Z"}
+{"parentUuid":"msg1","isSidechain":false,"type":"user","message":{"role":"user","content":[{"type":"text","text":"don't use httpx in dev scripts, use requests instead"}]},"uuid":"msg2","timestamp":"2026-04-18T09:01:00.000Z"}
+{"parentUuid":"msg2","isSidechain":false,"type":"assistant","message":{"role":"assistant","id":"resp2","content":[{"type":"tool_use","id":"t1","name":"Edit","input":{"file_path":"script.py"}}]},"timestamp":"2026-04-18T09:01:05.000Z"}
+{"parentUuid":"msg2","isSidechain":false,"type":"user","message":{"role":"user","content":[{"type":"tool_result","tool_use_id":"t1","content":"ok"}]},"uuid":"msg3","timestamp":"2026-04-18T09:01:10.000Z"}

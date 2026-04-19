@@ -1,0 +1,26 @@
+{
+  "sessionId": "ddac3d5b-ccf2-48f8-b5b6-5002108656c2",
+  "projectHash": "a1bda2d4d7636f57abc",
+  "startTime": "2026-04-18T10:15:40.744Z",
+  "lastUpdated": "2026-04-18T10:16:46.000Z",
+  "messages": [
+    {
+      "id": "msg1",
+      "timestamp": "2026-04-18T10:16:02.000Z",
+      "type": "user",
+      "content": [{"text": "testing gemini on this folder"}]
+    },
+    {
+      "id": "msg2",
+      "timestamp": "2026-04-18T10:16:10.000Z",
+      "type": "gemini",
+      "content": [{"text": "I can help you with that. Here is what I found..."}]
+    },
+    {
+      "id": "msg3",
+      "timestamp": "2026-04-18T10:16:20.000Z",
+      "type": "error",
+      "content": "Automatic update failed"
+    }
+  ]
+}
