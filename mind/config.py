@@ -19,7 +19,7 @@ _COPILOT_PATHS = {
 }
 
 _DEFAULT_LLM_COMMANDS = {
-    "claude": "claude -p {prompt} --allowedTools 'Write(_mind/mind.md)' 'Edit(_mind/index.yaml)'",
+    "claude": "claude -p {prompt} --allowedTools 'Write(_mind/mind.md)'",
     "gemini": "gemini -p {prompt}",
     "codex":  "codex {prompt}",
 }

@@ -28,9 +28,6 @@ Update mind.md. Rules:
 - history: append one compressed entry for this sync (date + what changed)
 - Stay within {mind_max_lines} lines total. Compress oldest history first if over budget.
 
-Then update _mind/index.yaml: set last_sync to current ISO datetime, increment sync_count,
-update mtimes for all processed files.
-
 Write the complete updated mind.md now.
 """
 

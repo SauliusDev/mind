@@ -1,4 +1,5 @@
 from __future__ import annotations
+from datetime import datetime, timezone
 from pathlib import Path
 
 from mind.config import Config
@@ -60,5 +61,10 @@ def run_sync(cfg: Config, mind_dir: Path, project_path: str) -> None:
     current_mind = (mind_dir / "mind.md").read_text() if (mind_dir / "mind.md").exists() else ""
     prompt = build_prompt(cfg, all_messages, current_mind)
     run_synthesis(cfg, prompt, mind_dir)
+
+    index.sources = updated_sources
+    index.sync_count += 1
+    index.last_sync = datetime.now(tz=timezone.utc).isoformat()
+    index.write(mind_dir)
 
     print(f"✓ mind synced — {len(all_messages)} messages processed")
