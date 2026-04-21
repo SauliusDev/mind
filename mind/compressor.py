@@ -1,0 +1,100 @@
+from __future__ import annotations
+import hashlib
+import json
+import shlex
+import subprocess
+from pathlib import Path
+
+from mind.config import Config
+from mind.extractors.base import Message
+
+_FACET_PROMPT_TEMPLATE = """\
+Extract structured insights from this AI coding session transcript chunk.
+
+## Transcript:
+{conversation}
+
+## Instructions:
+Output ONLY a JSON object with these keys (all are string arrays, use [] if nothing relevant):
+{{
+  "corrections": [things the user had to correct or re-ask the AI about],
+  "workflows":   [repeated multi-step patterns the user invoked],
+  "decisions":   [technical or architectural decisions made],
+  "friction":    [where the AI missed the mark, over-changed things, or misunderstood],
+  "lessons":     [things learned that worked (prefix ✓) or failed (prefix ✗)],
+  "prompting_gaps": [cases where vague user prompting caused confusion or re-work]
+}}
+
+Output ONLY the JSON object. No explanation, no markdown fences.
+"""
+
+_EMPTY_FACETS: dict[str, list] = {
+    "corrections": [],
+    "workflows": [],
+    "decisions": [],
+    "friction": [],
+    "lessons": [],
+    "prompting_gaps": [],
+}
+
+
+def _cache_key(project_path: str, tool: str, files: dict[str, str]) -> str:
+    sorted_files = sorted(files.items())
+    raw = f"{project_path}|{tool}|{json.dumps(sorted_files)}"
+    return hashlib.sha256(raw.encode()).hexdigest()[:16]
+
+
+def _run_haiku(cfg: Config, prompt: str) -> str:
+    cmd_str = cfg.haiku_command.replace("{prompt}", shlex.quote(prompt))
+    cmd = shlex.split(cmd_str)
+    result = subprocess.run(cmd, capture_output=True, text=True)
+    if result.returncode != 0:
+        raise RuntimeError(f"Haiku compression failed: {result.stderr.strip()}")
+    return result.stdout.strip()
+
+
+def extract_facets(messages: list[Message], cfg: Config) -> dict:
+    chunks = [
+        messages[i : i + cfg.chunk_size]
+        for i in range(0, len(messages), cfg.chunk_size)
+    ]
+    merged: dict[str, list] = {k: [] for k in _EMPTY_FACETS}
+    for chunk in chunks:
+        conversation = "\n\n".join(m.format(cfg.max_message_chars) for m in chunk)
+        prompt = _FACET_PROMPT_TEMPLATE.format(conversation=conversation)
+        try:
+            raw = _run_haiku(cfg, prompt)
+            facet = json.loads(raw)
+        except (json.JSONDecodeError, RuntimeError):
+            continue
+        for key in merged:
+            merged[key].extend(facet.get(key, []))
+    return merged
+
+
+def aggregate_facets(all_facets: list[dict]) -> dict:
+    merged: dict[str, list] = {k: [] for k in _EMPTY_FACETS}
+    for facets in all_facets:
+        for key in merged:
+            merged[key].extend(facets.get(key, []))
+    for key in merged:
+        merged[key] = list(dict.fromkeys(merged[key]))
+    return merged
+
+
+def load_or_extract(
+    project_path: str,
+    tool: str,
+    files: dict[str, str],
+    messages: list[Message],
+    cfg: Config,
+    cache_dir: Path,
+) -> dict:
+    key = _cache_key(project_path, tool, files)
+    cache_file = cache_dir / f"{key}.json"
+    if cache_file.exists():
+        return json.loads(cache_file.read_text())
+    facets = extract_facets(messages, cfg)
+    cache_dir.mkdir(parents=True, exist_ok=True)
+    cache_file.write_text(json.dumps(facets))
+    return facets
