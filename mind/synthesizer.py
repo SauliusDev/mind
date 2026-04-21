@@ -49,7 +49,7 @@ def _fmt(items: list[str]) -> str:
     return "\n".join(f"- {item}" for item in items) if items else "(none)"
 
 
-def build_prompt(cfg: Config, facets: dict, current_mind: str) -> str:
+def build_prompt(cfg: Config, facets: dict[str, list[str]], current_mind: str) -> str:
     return _PROMPT_TEMPLATE.format(
         project_name=cfg.project_name,
         corrections=_fmt(facets.get("corrections", [])),

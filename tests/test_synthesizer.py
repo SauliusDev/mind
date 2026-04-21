@@ -1,4 +1,4 @@
-from unittest.mock import patch, MagicMock
+from unittest.mock import MagicMock, patch
 from mind.synthesizer import build_prompt, run_synthesis
 from mind.config import Config
 from pathlib import Path
