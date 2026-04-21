@@ -64,6 +64,10 @@ def extract_facets(messages: list[Message], cfg: Config) -> dict:
         prompt = _FACET_PROMPT_TEMPLATE.format(conversation=conversation)
         try:
             raw = _run_haiku(cfg, prompt)
+            # Strip markdown fences if the model wraps output despite instructions
+            raw = raw.strip()
+            if raw.startswith("```"):
+                raw = raw.split("\n", 1)[1].rsplit("```", 1)[0].strip()
             facet = json.loads(raw)
         except (json.JSONDecodeError, RuntimeError):
             continue
