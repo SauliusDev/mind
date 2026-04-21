@@ -2,8 +2,8 @@ from __future__ import annotations
 from datetime import datetime, timezone
 from pathlib import Path
 
+from mind.compressor import load_or_extract, aggregate_facets
 from mind.config import Config
-from mind.extractors.base import Message
 from mind.extractors.claude import ClaudeExtractor
 from mind.extractors.gemini import GeminiExtractor
 from mind.extractors.cursor import CursorExtractor
@@ -23,8 +23,10 @@ _EXTRACTORS = {
 
 def run_sync(cfg: Config, mind_dir: Path, project_path: str) -> None:
     index = Index.load(mind_dir)
-    all_messages: list[Message] = []
+    cache_dir = mind_dir / "facets"
+    all_facets: list[dict] = []
     updated_sources: dict[str, SourceIndex] = dict(index.sources)
+    total_messages = 0
 
     for tool_name in cfg.enabled_tools:
         extractor_cls = _EXTRACTORS.get(tool_name)
@@ -48,18 +50,21 @@ def run_sync(cfg: Config, mind_dir: Path, project_path: str) -> None:
             print(f"mind: warning — {tool_name} extractor failed: {e}")
             continue
 
-        all_messages.extend(messages)
-        updated_sources[tool_name] = SourceIndex(path=transcript_dir, files=new_files)
+        if not messages:
+            continue
 
-    if not all_messages:
+        facets = load_or_extract(project_path, tool_name, new_files, messages, cfg, cache_dir)
+        all_facets.append(facets)
+        updated_sources[tool_name] = SourceIndex(path=transcript_dir, files=new_files)
+        total_messages += len(messages)
+
+    if not all_facets:
         print("✓ mind up to date")
         return
 
-    all_messages.sort(key=lambda m: m.timestamp)
-    all_messages = all_messages[-cfg.max_messages_per_sync:]
-
+    aggregated = aggregate_facets(all_facets)
     current_mind = (mind_dir / "mind.md").read_text() if (mind_dir / "mind.md").exists() else ""
-    prompt = build_prompt(cfg, all_messages, current_mind)
+    prompt = build_prompt(cfg, aggregated, current_mind)
     run_synthesis(cfg, prompt, mind_dir)
 
     index.sources = updated_sources
@@ -67,4 +72,4 @@ def run_sync(cfg: Config, mind_dir: Path, project_path: str) -> None:
     index.last_sync = datetime.now(tz=timezone.utc).isoformat()
     index.write(mind_dir)
 
-    print(f"✓ mind synced — {len(all_messages)} messages processed")
+    print(f"✓ mind synced — {total_messages} messages processed")
