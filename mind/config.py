@@ -24,6 +24,8 @@ _DEFAULT_LLM_COMMANDS = {
     "codex":  "codex {prompt}",
 }
 
+_DEFAULT_HAIKU_COMMAND = "claude -p {prompt} --model claude-haiku-4-5-20251001"
+
 
 def resolve_tool_path(tool: str) -> str:
     if tool == "copilot":
@@ -40,7 +42,8 @@ class Config:
     llm_provider: str
     llm_commands: dict[str, str]
     enabled_tools: list[str]
-    max_messages_per_sync: int = 150
+    haiku_command: str = _DEFAULT_HAIKU_COMMAND
+    chunk_size: int = 30
     max_message_chars: int = 500
     mind_max_lines: int = 150
 
@@ -55,14 +58,16 @@ class Config:
         llm_commands = dict(_DEFAULT_LLM_COMMANDS)
         llm_commands.update(data.get("llm", {}).get("providers", {}))
 
+        llm_section = data.get("llm", {})
         limits = data.get("limits", {})
         return cls(
             project_name=data["project"]["name"],
             project_path=project_path,
-            llm_provider=data.get("llm", {}).get("provider", "claude"),
+            llm_provider=llm_section.get("provider", "claude"),
             llm_commands=llm_commands,
             enabled_tools=data.get("tools", {}).get("enabled", list(_TOOL_PATHS_SIMPLE)),
-            max_messages_per_sync=limits.get("max_messages_per_sync", 150),
+            haiku_command=llm_section.get("haiku_command", _DEFAULT_HAIKU_COMMAND),
+            chunk_size=limits.get("chunk_size", 30),
             max_message_chars=limits.get("max_message_chars", 500),
             mind_max_lines=limits.get("mind_max_lines", 150),
         )

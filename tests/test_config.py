@@ -17,9 +17,41 @@ enabled = ["claude", "gemini"]
     assert cfg.project_name == "my-project"
     assert cfg.llm_provider == "claude"
     assert cfg.enabled_tools == ["claude", "gemini"]
-    assert cfg.max_messages_per_sync == 150
     assert cfg.max_message_chars == 500
     assert cfg.mind_max_lines == 150
+
+
+def test_config_new_fields(tmp_path):
+    toml = tmp_path / "mind.toml"
+    toml.write_text("""
+[project]
+name = "my-project"
+[llm]
+provider = "claude"
+haiku_command = "myhaiku -p {prompt}"
+[limits]
+chunk_size = 50
+[tools]
+enabled = ["claude"]
+""")
+    cfg = Config.load(tmp_path)
+    assert cfg.haiku_command == "myhaiku -p {prompt}"
+    assert cfg.chunk_size == 50
+
+
+def test_config_defaults_new_fields(tmp_path):
+    toml = tmp_path / "mind.toml"
+    toml.write_text("""
+[project]
+name = "my-project"
+[llm]
+provider = "claude"
+[tools]
+enabled = ["claude"]
+""")
+    cfg = Config.load(tmp_path)
+    assert cfg.haiku_command == "claude -p {prompt} --model claude-haiku-4-5-20251001"
+    assert cfg.chunk_size == 30
 
 
 def test_config_missing_file(tmp_path):
