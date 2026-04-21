@@ -9,16 +9,21 @@ from mind.extractors.gemini import GeminiExtractor
 from mind.extractors.cursor import CursorExtractor
 from mind.extractors.codex import CodexExtractor
 from mind.extractors.copilot import CopilotExtractor
+from mind.extractors.opencode import OpencodeExtractor
 from mind.index import Index, SourceIndex
 from mind.synthesizer import build_prompt, run_synthesis
 
 _EXTRACTORS = {
-    "claude":  ClaudeExtractor,
-    "gemini":  GeminiExtractor,
-    "cursor":  CursorExtractor,
-    "codex":   CodexExtractor,
-    "copilot": CopilotExtractor,
+    "claude":    ClaudeExtractor,
+    "gemini":    GeminiExtractor,
+    "cursor":    CursorExtractor,
+    "codex":     CodexExtractor,
+    "copilot":   CopilotExtractor,
+    "opencode":  OpencodeExtractor,
 }
+
+# extractors that need project_path passed to extract_new
+_NEEDS_PROJECT_PATH = {"copilot", "codex", "opencode"}
 
 
 def run_sync(cfg: Config, mind_dir: Path, project_path: str) -> None:
@@ -40,7 +45,7 @@ def run_sync(cfg: Config, mind_dir: Path, project_path: str) -> None:
 
         known = index.known_files(tool_name)
         try:
-            if tool_name == "copilot":
+            if tool_name in _NEEDS_PROJECT_PATH:
                 messages, new_files = extractor.extract_new(
                     transcript_dir, known, cfg.max_message_chars, project_path=project_path
                 )
