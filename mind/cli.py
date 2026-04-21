@@ -5,6 +5,7 @@ from pathlib import Path
 import click
 
 from mind.config import Config
+from mind.evolve import run_evolve
 from mind.hook import install_hook
 from mind.index import Index, SourceIndex
 from mind.sync import run_sync
@@ -58,12 +59,13 @@ name = "{project_name}"
 
 [llm]
 provider = "{llm}"
+# haiku_command = "claude -p {{prompt}} --model claude-haiku-4-5-20251001"
 
 [tools]
 enabled = ["claude", "gemini", "cursor", "codex", "copilot"]
 
 [limits]
-max_messages_per_sync = 150
+chunk_size = 30
 max_message_chars = 500
 mind_max_lines = 150
 """
@@ -191,3 +193,22 @@ def status(project_path: str) -> None:
     for tool in cfg.enabled_tools:
         count = len(index.known_files(tool))
         click.echo(f"  {tool:<10} {count} files tracked")
+
+
+@main.command()
+@click.option("--project-path", default=".", show_default=True)
+@click.option(
+    "--write",
+    is_flag=True,
+    default=False,
+    help="Write suggested rules/skills/CLAUDE.md to .claude/ directory.",
+)
+def evolve(project_path: str, write: bool) -> None:
+    """Analyse full session history and suggest .claude/ artifacts."""
+    root = Path(project_path).resolve()
+    cfg = Config.load(root)
+    mind_dir = root / "_mind"
+    if not mind_dir.exists():
+        click.echo("✗ _mind/ not found. Run: mind init")
+        return
+    run_evolve(cfg, root, mind_dir, write=write)
