@@ -1,7 +1,5 @@
 from __future__ import annotations
 import json
-import sqlite3
-import sys
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -9,12 +7,7 @@ from mind.extractors.base import Message
 
 
 def _default_base() -> Path:
-    if sys.platform == "darwin":
-        return Path.home() / "Library" / "Application Support" / "Code" / "User" / "workspaceStorage"
-    if sys.platform.startswith("win"):
-        import os
-        return Path(os.environ.get("APPDATA", "~")) / "Code" / "User" / "workspaceStorage"
-    return Path.home() / ".config" / "Code" / "User" / "workspaceStorage"
+    return Path.home() / ".copilot" / "session-state"
 
 
 class CopilotExtractor:
@@ -37,30 +30,24 @@ class CopilotExtractor:
         messages: list[Message] = []
         updated = dict(known_files)
 
-        for ws_dir in directory.iterdir():
-            if not ws_dir.is_dir():
+        for session_dir in directory.iterdir():
+            if not session_dir.is_dir():
                 continue
-            db_path = ws_dir / "state.vscdb"
-            if not db_path.exists():
+            events_file = session_dir / "events.jsonl"
+            if not events_file.exists():
                 continue
 
-            fname = str(ws_dir.name) + "/state.vscdb"
-            current_mtime = _iso_mtime(db_path)
+            fname = session_dir.name + "/events.jsonl"
+            current_mtime = _iso_mtime(events_file)
             if fname in known_files and known_files[fname] >= current_mtime:
                 continue
 
-            workspace_project = _read_workspace_project(db_path)
-            if project_path and workspace_project and workspace_project != project_path:
+            session_cwd = _read_session_cwd(events_file)
+            if project_path and session_cwd and not session_cwd.startswith(project_path):
                 continue
 
-            for entry in _read_chat_messages(db_path):
-                role = entry.get("role", "")
-                if role not in ("user", "assistant"):
-                    continue
-                text = entry.get("content", "").strip()
-                if not text or text.startswith("/") or text.startswith("<"):
-                    continue
-                messages.append(Message(role=role, text=text[:max_chars], timestamp="", tool="copilot"))
+            for msg in _read_messages(events_file, max_chars):
+                messages.append(msg)
 
             updated[fname] = current_mtime
 
@@ -72,27 +59,39 @@ def _iso_mtime(path: Path) -> str:
     return datetime.fromtimestamp(ts, tz=timezone.utc).isoformat()
 
 
-def _read_workspace_project(db_path: Path) -> str:
+def _read_session_cwd(events_file: Path) -> str:
     try:
-        conn = sqlite3.connect(f"file:{db_path}?mode=ro", uri=True)
-        row = conn.execute("SELECT value FROM ItemTable WHERE key='folder'").fetchone()
-        conn.close()
-        if row:
-            data = json.loads(row[0])
-            uri = data.get("folderUri", "")
-            return uri.replace("file://", "")
+        first_line = events_file.read_text().split("\n", 1)[0]
+        obj = json.loads(first_line)
+        if obj.get("type") == "session.start":
+            return obj.get("data", {}).get("cwd", "")
     except Exception:
         pass
     return ""
 
 
-def _read_chat_messages(db_path: Path) -> list[dict]:
+def _read_messages(events_file: Path, max_chars: int) -> list[Message]:
+    messages: list[Message] = []
     try:
-        conn = sqlite3.connect(f"file:{db_path}?mode=ro", uri=True)
-        row = conn.execute("SELECT value FROM ItemTable WHERE key='copilot.chatSessions'").fetchone()
-        conn.close()
-        if row:
-            return json.loads(row[0]) or []
+        for line in events_file.read_text().splitlines():
+            if not line.strip():
+                continue
+            obj = json.loads(line)
+            event_type = obj.get("type", "")
+            if event_type not in ("user.message", "assistant.message"):
+                continue
+            data = obj.get("data", {})
+            role = "user" if event_type == "user.message" else "assistant"
+            content = data.get("content", "")
+            if isinstance(content, list):
+                content = " ".join(
+                    p.get("text", "") for p in content if isinstance(p, dict)
+                )
+            content = content.strip()
+            if not content:
+                continue
+            timestamp = obj.get("timestamp", "")
+            messages.append(Message(role=role, text=content[:max_chars], timestamp=timestamp, tool="copilot"))
     except Exception:
         pass
-    return []
+    return messages
