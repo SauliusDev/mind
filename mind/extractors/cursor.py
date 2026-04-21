@@ -1,5 +1,6 @@
 from __future__ import annotations
 import json
+import re
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -19,7 +20,7 @@ class CursorExtractor:
         self._base = Path(base_dir) if base_dir else _BASE_DIR
 
     def find_project_path(self, project_path: str) -> str | None:
-        slug = "-" + _slug_from_path(project_path)
+        slug = _slug_from_path(project_path)
         transcripts = self._base / slug / "agent-transcripts"
         return str(transcripts) if transcripts.exists() else None
 
@@ -83,7 +84,14 @@ def _extract_message(entry: dict, max_chars: int) -> Message | None:
     elif isinstance(content, str):
         text = content.strip()
 
-    if not text or text.startswith("/") or text.startswith("<"):
+    if not text:
+        return None
+
+    # strip <user_query> wrapper Cursor injects around user input
+    text = re.sub(r"<user_query>\s*", "", text)
+    text = re.sub(r"\s*</user_query>", "", text).strip()
+
+    if not text or text.startswith("/"):
         return None
 
     return Message(role=role, text=text[:max_chars], timestamp="", tool="cursor")
