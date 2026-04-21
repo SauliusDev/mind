@@ -15,32 +15,34 @@ class CodexExtractor:
         self._base = Path(base_dir) if base_dir else _BASE_DIR
 
     def find_project_path(self, project_path: str) -> str | None:
-        return str(self._base) if self._base.exists() else None
+        sessions_dir = self._base / "sessions"
+        return str(sessions_dir) if sessions_dir.exists() else None
 
     def extract_new(
         self,
         transcript_dir: str,
         known_files: dict[str, str],
         max_chars: int,
+        project_path: str = "",
     ) -> tuple[list[Message], dict[str, str]]:
         directory = Path(transcript_dir)
         messages: list[Message] = []
         updated = dict(known_files)
 
-        history = directory / "history.jsonl"
-        if history.exists():
-            current_mtime = _iso_mtime(history)
-            if "history.jsonl" not in known_files or known_files["history.jsonl"] < current_mtime:
-                for entry in _parse_jsonl(history):
-                    text = entry.get("text", "").strip()
-                    if text and not text.startswith("/") and not text.startswith("<"):
-                        messages.append(Message(
-                            role="user",
-                            text=text[:max_chars],
-                            timestamp=_ts_to_iso(entry.get("ts", 0)),
-                            tool="codex",
-                        ))
-                updated["history.jsonl"] = current_mtime
+        for session_file in sorted(directory.rglob("rollout-*.jsonl")):
+            rel = str(session_file.relative_to(directory))
+            current_mtime = _iso_mtime(session_file)
+            if rel in known_files and known_files[rel] >= current_mtime:
+                continue
+
+            session_cwd = _read_session_cwd(session_file)
+            if project_path and session_cwd and not session_cwd.startswith(project_path):
+                continue
+
+            for msg in _read_messages(session_file, max_chars):
+                messages.append(msg)
+
+            updated[rel] = current_mtime
 
         return messages, updated
 
@@ -50,21 +52,50 @@ def _iso_mtime(path: Path) -> str:
     return datetime.fromtimestamp(ts, tz=timezone.utc).isoformat()
 
 
-def _ts_to_iso(ts: int | float) -> str:
+def _read_session_cwd(session_file: Path) -> str:
     try:
-        return datetime.fromtimestamp(float(ts), tz=timezone.utc).isoformat()
-    except (ValueError, OSError):
-        return ""
+        for line in session_file.read_text(errors="replace").splitlines():
+            if not line.strip():
+                continue
+            obj = json.loads(line)
+            if obj.get("type") == "session_meta":
+                return obj.get("payload", {}).get("cwd", "")
+    except Exception:
+        pass
+    return ""
 
 
-def _parse_jsonl(path: Path) -> list[dict]:
-    entries = []
-    for line in path.read_text(errors="replace").splitlines():
-        line = line.strip()
-        if not line:
-            continue
-        try:
-            entries.append(json.loads(line))
-        except json.JSONDecodeError:
-            continue
-    return entries
+def _read_messages(session_file: Path, max_chars: int) -> list[Message]:
+    messages: list[Message] = []
+    try:
+        for line in session_file.read_text(errors="replace").splitlines():
+            if not line.strip():
+                continue
+            obj = json.loads(line)
+            if obj.get("type") != "event_msg":
+                continue
+            payload = obj.get("payload", {})
+            event_type = payload.get("type", "")
+            timestamp = obj.get("timestamp", "")
+
+            if event_type == "user_message":
+                text = payload.get("message", "").strip()
+                if text:
+                    messages.append(Message(
+                        role="user",
+                        text=text[:max_chars],
+                        timestamp=timestamp,
+                        tool="codex",
+                    ))
+            elif event_type == "agent_message" and payload.get("phase") in ("final", "final_answer", None):
+                text = payload.get("message", "").strip()
+                if text:
+                    messages.append(Message(
+                        role="assistant",
+                        text=text[:max_chars],
+                        timestamp=timestamp,
+                        tool="codex",
+                    ))
+    except Exception:
+        pass
+    return messages
