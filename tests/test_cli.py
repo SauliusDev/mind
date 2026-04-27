@@ -17,7 +17,7 @@ def test_init_creates_mind_dir(tmp_path):
     assert (tmp_path / "_mind").exists()
     assert (tmp_path / "_mind" / "mind.md").exists()
     assert (tmp_path / "_mind" / "index.yaml").exists()
-    assert (tmp_path / "mind.toml").exists()
+    assert (tmp_path / "_mind" / "mind.toml").exists()
 
 def test_init_installs_hook(tmp_path):
     _git_init(tmp_path)

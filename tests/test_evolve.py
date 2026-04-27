@@ -7,7 +7,8 @@ from mind.config import Config
 
 
 def _make_config(tmp_path: Path) -> Config:
-    (tmp_path / "mind.toml").write_text("""
+    (tmp_path / "_mind").mkdir(exist_ok=True)
+    (tmp_path / "_mind" / "mind.toml").write_text("""
 [project]
 name = "test-project"
 [llm]
@@ -99,7 +100,7 @@ def test_parse_claude_md_addition_extracts_content():
 def test_run_evolve_saves_report(tmp_path):
     cfg = _make_config(tmp_path)
     mind_dir = tmp_path / "_mind"
-    mind_dir.mkdir()
+    mind_dir.mkdir(exist_ok=True)
     empty_facets = {k: [] for k in SAMPLE_FACETS}
     with patch("mind.evolve.load_or_extract", return_value=empty_facets):
         with patch("mind.evolve.aggregate_facets", return_value=empty_facets):
@@ -113,7 +114,7 @@ def test_run_evolve_saves_report(tmp_path):
 def test_run_evolve_write_creates_rule_files(tmp_path):
     cfg = _make_config(tmp_path)
     mind_dir = tmp_path / "_mind"
-    mind_dir.mkdir()
+    mind_dir.mkdir(exist_ok=True)
     empty_facets = {k: [] for k in SAMPLE_FACETS}
     with patch("mind.evolve.load_or_extract", return_value=empty_facets):
         with patch("mind.evolve.aggregate_facets", return_value=empty_facets):

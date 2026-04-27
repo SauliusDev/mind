@@ -8,7 +8,8 @@ FIXTURES = Path(__file__).parent / "fixtures"
 
 
 def _make_project(tmp_path: Path) -> tuple[Path, Config]:
-    (tmp_path / "mind.toml").write_text("""
+    (tmp_path / "_mind").mkdir(exist_ok=True)
+    (tmp_path / "_mind" / "mind.toml").write_text("""
 [project]
 name = "test-project"
 [llm]
@@ -19,7 +20,7 @@ enabled = ["claude"]
 chunk_size = 10
 """)
     mind_dir = tmp_path / "_mind"
-    mind_dir.mkdir()
+    mind_dir.mkdir(exist_ok=True)
     (mind_dir / "mind.md").write_text("# mind — test-project\n## behavior\n")
     cfg = Config.load(tmp_path)
     return mind_dir, cfg

@@ -16,7 +16,8 @@ from mind.extractors.base import Message
 
 
 def _make_config(tmp_path: Path) -> Config:
-    (tmp_path / "mind.toml").write_text("""
+    (tmp_path / "_mind").mkdir(exist_ok=True)
+    (tmp_path / "_mind" / "mind.toml").write_text("""
 [project]
 name = "test-project"
 [llm]

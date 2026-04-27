@@ -49,9 +49,9 @@ class Config:
 
     @classmethod
     def load(cls, project_path: Path) -> "Config":
-        toml_path = project_path / "mind.toml"
+        toml_path = project_path / "_mind" / "mind.toml"
         if not toml_path.exists():
-            raise FileNotFoundError(f"mind.toml not found in {project_path}")
+            raise FileNotFoundError(f"_mind/mind.toml not found in {project_path}")
         with open(toml_path, "rb") as f:
             data = tomllib.load(f)
 

@@ -106,7 +106,7 @@ def init(project_path: str, name: str, llm: str) -> None:
     )
     index.write(mind_dir)
 
-    toml_path = root / "mind.toml"
+    toml_path = mind_dir / "mind.toml"
     if not toml_path.exists():
         toml_path.write_text(_TOML_TEMPLATE.format(project_name=name, llm=llm))
 
@@ -115,7 +115,7 @@ def init(project_path: str, name: str, llm: str) -> None:
     click.echo("  _mind/mind.md     created")
     click.echo("  _mind/README.md   created")
     click.echo("  _mind/index.yaml  created")
-    click.echo("  mind.toml         created")
+    click.echo("  _mind/mind.toml   created")
     click.echo("  .git/hooks/post-commit  installed")
 
 
@@ -181,7 +181,7 @@ def status(project_path: str) -> None:
     try:
         cfg = Config.load(root)
     except FileNotFoundError:
-        click.echo("✗ mind.toml not found. Run: mind init")
+        click.echo("✗ _mind/mind.toml not found. Run: mind init")
         return
 
     index = Index.load(root / "_mind")

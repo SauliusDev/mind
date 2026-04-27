@@ -5,7 +5,8 @@ from pathlib import Path
 
 
 def _make_config(tmp_path: Path) -> Config:
-    (tmp_path / "mind.toml").write_text("""
+    (tmp_path / "_mind").mkdir(exist_ok=True)
+    (tmp_path / "_mind" / "mind.toml").write_text("""
 [project]
 name = "test-project"
 [llm]
@@ -60,7 +61,7 @@ def test_build_prompt_no_facets(tmp_path):
 def test_run_synthesis_calls_subprocess(tmp_path):
     cfg = _make_config(tmp_path)
     mind_dir = tmp_path / "_mind"
-    mind_dir.mkdir()
+    mind_dir.mkdir(exist_ok=True)
     with patch("subprocess.run") as mock_run:
         mock_run.return_value = MagicMock(returncode=0)
         run_synthesis(cfg, "test prompt", mind_dir)
@@ -73,7 +74,7 @@ def test_run_synthesis_calls_subprocess(tmp_path):
 def test_run_synthesis_raises_on_failure(tmp_path):
     cfg = _make_config(tmp_path)
     mind_dir = tmp_path / "_mind"
-    mind_dir.mkdir()
+    mind_dir.mkdir(exist_ok=True)
     import pytest
     with patch("subprocess.run") as mock_run:
         mock_run.return_value = MagicMock(returncode=1)

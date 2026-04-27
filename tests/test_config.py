@@ -4,7 +4,8 @@ from mind.config import Config, resolve_tool_path
 
 
 def test_config_defaults(tmp_path):
-    toml = tmp_path / "mind.toml"
+    (tmp_path / "_mind").mkdir(exist_ok=True)
+    toml = tmp_path / "_mind" / "mind.toml"
     toml.write_text("""
 [project]
 name = "my-project"
@@ -22,7 +23,8 @@ enabled = ["claude", "gemini"]
 
 
 def test_config_new_fields(tmp_path):
-    toml = tmp_path / "mind.toml"
+    (tmp_path / "_mind").mkdir(exist_ok=True)
+    toml = tmp_path / "_mind" / "mind.toml"
     toml.write_text("""
 [project]
 name = "my-project"
@@ -40,7 +42,8 @@ enabled = ["claude"]
 
 
 def test_config_defaults_new_fields(tmp_path):
-    toml = tmp_path / "mind.toml"
+    (tmp_path / "_mind").mkdir(exist_ok=True)
+    toml = tmp_path / "_mind" / "mind.toml"
     toml.write_text("""
 [project]
 name = "my-project"
