@@ -31,7 +31,7 @@ def test_skips_unchanged(tmp_path):
     assert messages == []
 
 def test_find_project_path_slug(tmp_path):
-    slug_dir = tmp_path / "-home-ubuntu-myproject" / "agent-transcripts"
+    slug_dir = tmp_path / "home-ubuntu-myproject" / "agent-transcripts"
     slug_dir.mkdir(parents=True)
     extractor = CursorExtractor(base_dir=str(tmp_path))
     result = extractor.find_project_path("/home/ubuntu/myproject")

@@ -42,9 +42,10 @@ class CopilotExtractor:
             if fname in known_files and known_files[fname] >= current_mtime:
                 continue
 
-            session_cwd = _read_session_cwd(events_file)
-            if project_path and session_cwd and not session_cwd.startswith(project_path):
-                continue
+            if project_path:
+                session_cwd = _read_session_cwd(events_file)
+                if not session_cwd or not session_cwd.startswith(project_path):
+                    continue
 
             for msg in _read_messages(events_file, max_chars):
                 messages.append(msg)

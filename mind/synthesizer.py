@@ -66,6 +66,19 @@ def run_synthesis(cfg: Config, prompt: str, mind_dir: Path) -> None:
     cmd_template = cfg.llm_commands.get(cfg.llm_provider, "claude -p {prompt}")
     cmd_str = cmd_template.replace("{prompt}", shlex.quote(prompt))
     cmd = shlex.split(cmd_str)
-    result = subprocess.run(cmd, cwd=mind_dir.parent)
-    if result.returncode != 0:
-        raise RuntimeError(f"LLM synthesis failed with exit code {result.returncode}")
+    print(f"  synthesizing with {cfg.llm_provider}...")
+    mind_file = mind_dir / "mind.md"
+    mtime_before = mind_file.stat().st_mtime if mind_file.exists() else 0
+    chunks: list[str] = []
+    with subprocess.Popen(cmd, cwd=mind_dir.parent, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True) as proc:
+        for chunk in proc.stdout:
+            print(chunk, end="", flush=True)
+            chunks.append(chunk)
+        proc.wait()
+        if proc.returncode != 0:
+            err = proc.stderr.read() if proc.stderr else ""
+            raise RuntimeError(f"LLM synthesis failed (exit {proc.returncode}): {err}")
+    print()
+    mtime_after = mind_file.stat().st_mtime if mind_file.exists() else 0
+    if mtime_after <= mtime_before:
+        mind_file.write_text("".join(chunks))

@@ -35,9 +35,10 @@ class CodexExtractor:
             if rel in known_files and known_files[rel] >= current_mtime:
                 continue
 
-            session_cwd = _read_session_cwd(session_file)
-            if project_path and session_cwd and not session_cwd.startswith(project_path):
-                continue
+            if project_path:
+                session_cwd = _read_session_cwd(session_file)
+                if not session_cwd or not session_cwd.startswith(project_path):
+                    continue
 
             for msg in _read_messages(session_file, max_chars):
                 messages.append(msg)
