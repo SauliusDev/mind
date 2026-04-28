@@ -3,6 +3,7 @@ import hashlib
 import json
 import shlex
 import subprocess
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from pathlib import Path
 
 from mind.config import Config
@@ -53,26 +54,33 @@ def _run_haiku(cfg: Config, prompt: str) -> str:
     return result.stdout.strip()
 
 
+def _process_chunk(chunk: list[Message], cfg: Config) -> dict | None:
+    conversation = "\n\n".join(m.format(cfg.max_message_chars) for m in chunk)
+    prompt = _FACET_PROMPT_TEMPLATE.format(conversation=conversation)
+    try:
+        raw = _run_haiku(cfg, prompt)
+        raw = raw.strip()
+        if raw.startswith("```"):
+            raw = raw.split("\n", 1)[1].rsplit("```", 1)[0].strip()
+        return json.loads(raw)
+    except (json.JSONDecodeError, RuntimeError):
+        return None
+
+
 def extract_facets(messages: list[Message], cfg: Config) -> dict:
     chunks = [
         messages[i : i + cfg.chunk_size]
         for i in range(0, len(messages), cfg.chunk_size)
     ]
     merged: dict[str, list] = {k: [] for k in _EMPTY_FACETS}
-    for chunk in chunks:
-        conversation = "\n\n".join(m.format(cfg.max_message_chars) for m in chunk)
-        prompt = _FACET_PROMPT_TEMPLATE.format(conversation=conversation)
-        try:
-            raw = _run_haiku(cfg, prompt)
-            # Strip markdown fences if the model wraps output despite instructions
-            raw = raw.strip()
-            if raw.startswith("```"):
-                raw = raw.split("\n", 1)[1].rsplit("```", 1)[0].strip()
-            facet = json.loads(raw)
-        except (json.JSONDecodeError, RuntimeError):
-            continue
-        for key in merged:
-            merged[key].extend(facet.get(key, []))
+    with ThreadPoolExecutor(max_workers=len(chunks)) as executor:
+        futures = [executor.submit(_process_chunk, chunk, cfg) for chunk in chunks]
+        for future in as_completed(futures):
+            facet = future.result()
+            if facet is None:
+                continue
+            for key in merged:
+                merged[key].extend(facet.get(key, []))
     return merged
 
 
