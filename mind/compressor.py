@@ -72,15 +72,21 @@ def extract_facets(messages: list[Message], cfg: Config) -> dict:
         messages[i : i + cfg.chunk_size]
         for i in range(0, len(messages), cfg.chunk_size)
     ]
+    n = len(chunks)
     merged: dict[str, list] = {k: [] for k in _EMPTY_FACETS}
-    with ThreadPoolExecutor(max_workers=len(chunks)) as executor:
+    completed = 0
+    print(f"  extracting {n} chunk{'s' if n != 1 else ''}  0/{n}", end="", flush=True)
+    with ThreadPoolExecutor(max_workers=n) as executor:
         futures = [executor.submit(_process_chunk, chunk, cfg) for chunk in chunks]
         for future in as_completed(futures):
+            completed += 1
+            print(f"\r  extracting {n} chunk{'s' if n != 1 else ''}  {completed}/{n}", end="", flush=True)
             facet = future.result()
             if facet is None:
                 continue
             for key in merged:
                 merged[key].extend(facet.get(key, []))
+    print()
     return merged
 
 
@@ -105,6 +111,7 @@ def load_or_extract(
     key = _cache_key(project_path, tool, files)
     cache_file = cache_dir / f"{key}.json"
     if cache_file.exists():
+        print("  (cached)")
         return json.loads(cache_file.read_text())
     facets = extract_facets(messages, cfg)
     cache_dir.mkdir(parents=True, exist_ok=True)

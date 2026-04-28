@@ -44,6 +44,7 @@ def run_sync(cfg: Config, mind_dir: Path, project_path: str) -> None:
             continue
 
         known = index.known_files(tool_name)
+        print(f"  {tool_name}  scanning...", end="\r", flush=True)
         try:
             if tool_name in _NEEDS_PROJECT_PATH:
                 messages, new_files = extractor.extract_new(
@@ -52,12 +53,15 @@ def run_sync(cfg: Config, mind_dir: Path, project_path: str) -> None:
             else:
                 messages, new_files = extractor.extract_new(transcript_dir, known, cfg.max_message_chars)
         except Exception as e:
-            print(f"mind: warning — {tool_name} extractor failed: {e}")
+            print(f"  {tool_name}  warning: {e}" + " " * 20)
             continue
 
         if not messages:
+            print(f"  {tool_name}  up to date" + " " * 20)
             continue
 
+        new_file_count = len(new_files) - len(known)
+        print(f"  {tool_name}  {len(messages)} messages · {new_file_count} new files")
         facets = load_or_extract(project_path, tool_name, new_files, messages, cfg, cache_dir)
         all_facets.append(facets)
         updated_sources[tool_name] = SourceIndex(path=transcript_dir, files=new_files)
