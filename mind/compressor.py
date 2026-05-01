@@ -46,9 +46,11 @@ def _cache_key(project_path: str, tool: str, files: dict[str, str]) -> str:
 
 
 def _run_haiku(cfg: Config, prompt: str) -> str:
+    import os
     cmd_str = cfg.haiku_command.replace("{prompt}", shlex.quote(prompt))
     cmd = shlex.split(cmd_str)
-    result = subprocess.run(cmd, capture_output=True, text=True)
+    env = {**os.environ, "CLAUDE_MIND_RUN": "1"}
+    result = subprocess.run(cmd, capture_output=True, text=True, env=env)
     if result.returncode != 0:
         raise RuntimeError(f"Haiku compression failed: {result.stderr.strip()}")
     return result.stdout.strip()
@@ -72,15 +74,17 @@ def extract_facets(messages: list[Message], cfg: Config) -> dict:
         messages[i : i + cfg.chunk_size]
         for i in range(0, len(messages), cfg.chunk_size)
     ]
-    n = len(chunks)
+    total = len(chunks)
     merged: dict[str, list] = {k: [] for k in _EMPTY_FACETS}
     completed = 0
-    print(f"  extracting {n} chunk{'s' if n != 1 else ''}  0/{n}", end="", flush=True)
-    with ThreadPoolExecutor(max_workers=n) as executor:
-        futures = [executor.submit(_process_chunk, chunk, cfg) for chunk in chunks]
+    print(f"  extracting {total} chunk{'s' if total != 1 else ''}  0/{total}", end="", flush=True)
+    with ThreadPoolExecutor(max_workers=total) as executor:
+        futures = {executor.submit(_process_chunk, chunk, cfg): i for i, chunk in enumerate(chunks, 1)}
         for future in as_completed(futures):
             completed += 1
-            print(f"\r  extracting {n} chunk{'s' if n != 1 else ''}  {completed}/{n}", end="", flush=True)
+            i = futures[future]
+            chunk = chunks[i - 1]
+            print(f"\r  extracting chunk {i}/{total} ({len(chunk)} messages)...", end="", flush=True)
             facet = future.result()
             if facet is None:
                 continue
@@ -111,7 +115,7 @@ def load_or_extract(
     key = _cache_key(project_path, tool, files)
     cache_file = cache_dir / f"{key}.json"
     if cache_file.exists():
-        print("  (cached)")
+        print("  cache hit — skipping extraction", flush=True)
         return json.loads(cache_file.read_text())
     facets = extract_facets(messages, cfg)
     cache_dir.mkdir(parents=True, exist_ok=True)

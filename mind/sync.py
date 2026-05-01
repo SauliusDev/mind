@@ -25,6 +25,9 @@ _EXTRACTORS = {
 # extractors that need project_path passed to extract_new
 _NEEDS_PROJECT_PATH = {"copilot", "codex", "opencode"}
 
+# extractors that support the lookbehind kwarg
+_SUPPORTS_LOOKBEHIND = {"claude"}
+
 
 def run_sync(cfg: Config, mind_dir: Path, project_path: str) -> None:
     index = Index.load(mind_dir)
@@ -44,27 +47,49 @@ def run_sync(cfg: Config, mind_dir: Path, project_path: str) -> None:
             continue
 
         known = index.known_files(tool_name)
-        print(f"  {tool_name}  scanning...", end="\r", flush=True)
         try:
-            if tool_name in _NEEDS_PROJECT_PATH:
+            if tool_name in _SUPPORTS_LOOKBEHIND:
+                messages, new_files, n_new, n_stale = extractor.extract_new(
+                    transcript_dir, known, cfg.max_message_chars,
+                    lookbehind=cfg.max_conversations_lookbehind,
+                )
+                lb_note = ""
+                if cfg.max_conversations_lookbehind and (n_new + n_stale) > cfg.max_conversations_lookbehind:
+                    lb_note = f" (capped at {cfg.max_conversations_lookbehind} by lookbehind)"
+                if n_new or n_stale:
+                    print(
+                        f"[{tool_name}] {n_new} new, {n_stale} stale"
+                        f" → {len(messages)} messages{lb_note}",
+                        flush=True,
+                    )
+                else:
+                    print(f"[{tool_name}] up to date", flush=True)
+            elif tool_name in _NEEDS_PROJECT_PATH:
                 messages, new_files = extractor.extract_new(
                     transcript_dir, known, cfg.max_message_chars, project_path=project_path
                 )
+                n_new = n_stale = 0
+                if messages:
+                    print(f"[{tool_name}] {len(messages)} messages", flush=True)
             else:
                 messages, new_files = extractor.extract_new(transcript_dir, known, cfg.max_message_chars)
+                n_new = n_stale = 0
+                if messages:
+                    print(f"[{tool_name}] {len(messages)} messages", flush=True)
         except Exception as e:
-            print(f"  {tool_name}  warning: {e}" + " " * 20)
+            print(f"mind: warning — {tool_name} extractor failed: {e}")
             continue
 
         if not messages:
-            print(f"  {tool_name}  up to date" + " " * 20)
             continue
 
-        new_file_count = len(new_files) - len(known)
-        print(f"  {tool_name}  {len(messages)} messages · {new_file_count} new files")
         facets = load_or_extract(project_path, tool_name, new_files, messages, cfg, cache_dir)
         all_facets.append(facets)
-        updated_sources[tool_name] = SourceIndex(path=transcript_dir, files=new_files)
+        # Write index for this tool immediately after facets are cached so an
+        # interrupted sync doesn't reprocess already-extracted conversations.
+        index.sources[tool_name] = SourceIndex(path=transcript_dir, files=new_files)
+        index.write(mind_dir)
+        updated_sources[tool_name] = index.sources[tool_name]
         total_messages += len(messages)
 
     if not all_facets:
@@ -74,6 +99,7 @@ def run_sync(cfg: Config, mind_dir: Path, project_path: str) -> None:
     aggregated = aggregate_facets(all_facets)
     current_mind = (mind_dir / "mind.md").read_text() if (mind_dir / "mind.md").exists() else ""
     prompt = build_prompt(cfg, aggregated, current_mind)
+    print(f"synthesizing {total_messages} messages → mind.md ...", flush=True)
     run_synthesis(cfg, prompt, mind_dir)
 
     index.sources = updated_sources

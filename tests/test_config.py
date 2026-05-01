@@ -18,7 +18,7 @@ enabled = ["claude", "gemini"]
     assert cfg.project_name == "my-project"
     assert cfg.llm_provider == "claude"
     assert cfg.enabled_tools == ["claude", "gemini"]
-    assert cfg.max_message_chars == 500
+    assert cfg.max_message_chars == 0
     assert cfg.mind_max_lines == 150
 
 

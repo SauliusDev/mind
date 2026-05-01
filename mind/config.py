@@ -44,7 +44,8 @@ class Config:
     enabled_tools: list[str]
     haiku_command: str = _DEFAULT_HAIKU_COMMAND
     chunk_size: int = 30
-    max_message_chars: int = 500
+    max_message_chars: int = 0
+    max_conversations_lookbehind: int = 0
     mind_max_lines: int = 150
 
     @classmethod
@@ -68,6 +69,7 @@ class Config:
             enabled_tools=data.get("tools", {}).get("enabled", list(_TOOL_PATHS_SIMPLE)),
             haiku_command=llm_section.get("haiku_command", _DEFAULT_HAIKU_COMMAND),
             chunk_size=limits.get("chunk_size", 30),
-            max_message_chars=limits.get("max_message_chars", 500),
+            max_message_chars=limits.get("max_message_chars", 0),
+            max_conversations_lookbehind=limits.get("max_conversations_lookbehind", 0),
             mind_max_lines=limits.get("mind_max_lines", 150),
         )

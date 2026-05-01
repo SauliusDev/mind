@@ -63,6 +63,7 @@ def build_prompt(cfg: Config, facets: dict[str, list[str]], current_mind: str) -
 
 
 def run_synthesis(cfg: Config, prompt: str, mind_dir: Path) -> None:
+    import os
     cmd_template = cfg.llm_commands.get(cfg.llm_provider, "claude -p {prompt}")
     cmd_str = cmd_template.replace("{prompt}", shlex.quote(prompt))
     cmd = shlex.split(cmd_str)
@@ -70,7 +71,8 @@ def run_synthesis(cfg: Config, prompt: str, mind_dir: Path) -> None:
     mind_file = mind_dir / "mind.md"
     mtime_before = mind_file.stat().st_mtime if mind_file.exists() else 0
     chunks: list[str] = []
-    with subprocess.Popen(cmd, cwd=mind_dir.parent, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True) as proc:
+    env = {**os.environ, "CLAUDE_MIND_RUN": "1"}
+    with subprocess.Popen(cmd, cwd=mind_dir.parent, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, env=env) as proc:
         for chunk in proc.stdout:
             print(chunk, end="", flush=True)
             chunks.append(chunk)

@@ -66,7 +66,7 @@ enabled = ["claude", "gemini", "cursor", "codex", "copilot"]
 
 [limits]
 chunk_size = 30
-max_message_chars = 500
+# max_conversations_lookbehind = 50  # uncomment on brownfield projects with many old convos
 mind_max_lines = 150
 """
 
@@ -173,6 +173,58 @@ def rebuild(project_path: str, yes: bool) -> None:
     run_sync(cfg, mind_dir, str(root))
 
 
+_LOOKBEHIND_TOOLS = {"claude"}
+
+
+def _tool_total_files(tool_name: str, project_path: str) -> int:
+    from mind.extractors.claude import ClaudeExtractor
+    from mind.extractors.gemini import GeminiExtractor
+    from mind.extractors.cursor import CursorExtractor
+    from mind.extractors.codex import CodexExtractor
+    from pathlib import Path as _Path
+    _GLOB: dict[str, str] = {
+        "claude": "*.jsonl",
+        "gemini": "**/*.json",
+        "cursor": "**/*.jsonl",
+        "codex":  "**/*.jsonl",
+    }
+    _EXT_CLS = {
+        "claude": ClaudeExtractor,
+        "gemini": GeminiExtractor,
+        "cursor": CursorExtractor,
+        "codex":  CodexExtractor,
+    }
+    cls = _EXT_CLS.get(tool_name)
+    if not cls:
+        return 0
+    ext = cls()
+    tdir = ext.find_project_path(project_path)
+    if not tdir:
+        return 0
+    pattern = _GLOB.get(tool_name, "*.jsonl")
+    return len(list(_Path(tdir).glob(pattern)))
+
+
+def _stale_count(known_files: dict, tool_name: str, project_path: str) -> int:
+    from mind.extractors.claude import ClaudeExtractor
+    from pathlib import Path as _Path
+    from datetime import datetime as _dt, timezone as _tz
+    _EXT_CLS = {"claude": ClaudeExtractor}
+    cls = _EXT_CLS.get(tool_name)
+    if not cls:
+        return 0
+    tdir = cls().find_project_path(project_path)
+    if not tdir:
+        return 0
+    stale = 0
+    for f in _Path(tdir).glob("*.jsonl"):
+        ts = f.stat().st_mtime
+        cur = _dt.fromtimestamp(ts, tz=_tz.utc).isoformat()
+        if f.name in known_files and known_files[f.name] < cur:
+            stale += 1
+    return stale
+
+
 @main.command()
 @click.option("--project-path", default=".", show_default=True)
 def status(project_path: str) -> None:
@@ -189,10 +241,37 @@ def status(project_path: str) -> None:
     click.echo(f"last sync:  {index.last_sync or 'never'}")
     click.echo(f"sync count: {index.sync_count}")
     click.echo(f"llm:        {cfg.llm_provider}")
+    lb = cfg.max_conversations_lookbehind
+    click.echo(f"lookbehind: {lb if lb else 'unlimited'}")
     click.echo("tools:")
     for tool in cfg.enabled_tools:
-        count = len(index.known_files(tool))
-        click.echo(f"  {tool:<10} {count} files tracked")
+        known = index.known_files(tool)
+        tracked = len(known)
+        total = _tool_total_files(tool, str(root))
+        if total == 0:
+            click.echo(f"  {tool:<10} no transcripts found")
+            continue
+        stale = _stale_count(known, tool, str(root))
+        pending_new = total - tracked
+
+        if lb and tool in _LOOKBEHIND_TOOLS:
+            in_scope = min(pending_new, lb)
+            effective_total = tracked + in_scope
+            pct = int(tracked / effective_total * 100) if effective_total else 100
+        else:
+            in_scope = pending_new
+            effective_total = total
+            pct = int(tracked / total * 100)
+
+        backlog = pending_new - in_scope
+        parts = [f"{tracked} synced", f"{in_scope} queued"]
+        if backlog > 0:
+            parts.append(f"{backlog} backlog")
+        if stale > 0:
+            parts.append(f"{stale} stale")
+        detail = "  ·  ".join(parts)
+        pct_label = "% of window" if (lb and tool in _LOOKBEHIND_TOOLS) else "% synced"
+        click.echo(f"  {tool:<10} {pct}{pct_label}  ·  {detail}")
 
 
 @main.command()

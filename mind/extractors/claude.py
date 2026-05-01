@@ -28,26 +28,44 @@ class ClaudeExtractor:
         transcript_dir: str,
         known_files: dict[str, str],
         max_chars: int,
-    ) -> tuple[list[Message], dict[str, str]]:
+        lookbehind: int = 0,
+    ) -> tuple[list[Message], dict[str, str], int, int]:
+        """Returns (messages, updated_files, n_new, n_stale)."""
         directory = Path(transcript_dir)
         messages: list[Message] = []
         updated = dict(known_files)
 
-        for jsonl_file in sorted(directory.glob("*.jsonl")):
+        pending: list[tuple[Path, str]] = []
+        for jsonl_file in directory.glob("*.jsonl"):
             fname = jsonl_file.name
             current_mtime = _iso_mtime(jsonl_file)
+            if fname not in known_files:
+                pending.append((jsonl_file, current_mtime))
+            elif known_files[fname] < current_mtime:
+                pending.append((jsonl_file, current_mtime))
 
-            if fname in known_files and known_files[fname] >= current_mtime:
-                continue
+        pending.sort(key=lambda t: t[1], reverse=True)
 
+        n_new = sum(1 for f, _ in pending if f.name not in known_files)
+        n_stale = len(pending) - n_new
+
+        if lookbehind > 0:
+            pending = pending[:lookbehind]
+
+        for jsonl_file, current_mtime in pending:
             for entry in _parse_jsonl(jsonl_file):
                 msg = _extract_message(entry, max_chars)
                 if msg:
                     messages.append(msg)
+            updated[jsonl_file.name] = current_mtime
 
-            updated[fname] = current_mtime
+        return messages, updated, n_new, n_stale
 
-        return messages, updated
+    def count_total(self, project_path: str) -> int:
+        transcript_dir = self.find_project_path(project_path)
+        if not transcript_dir:
+            return 0
+        return len(list(Path(transcript_dir).glob("*.jsonl")))
 
 
 def _iso_mtime(path: Path) -> str:
@@ -85,7 +103,9 @@ def _extract_message(entry: dict, max_chars: int) -> Message | None:
     if text.startswith("/") or text.startswith("<"):
         return None
 
-    return Message(role=role, text=text[:max_chars], timestamp=timestamp, tool="claude")
+    if max_chars and max_chars > 0:
+        text = text[:max_chars]
+    return Message(role=role, text=text, timestamp=timestamp, tool="claude")
 
 
 def _get_text(content: str | list) -> str:
