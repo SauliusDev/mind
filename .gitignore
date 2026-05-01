@@ -9,3 +9,8 @@ __pycache__/
 _mind/
 .venv/
 docs/
+_archive/
+.claude/
+uv.lock
+AGENTS.md
+GEMINI.md
