@@ -6,8 +6,18 @@ from pathlib import Path
 HOOK_MARKER = "# mind managed block"
 
 
+def _find_mind_bin() -> str:
+    import sys
+    # Prefer the binary co-located with the running Python interpreter (same venv).
+    # This avoids picking up a shadowing `mind` from an unrelated venv on PATH.
+    venv_bin = Path(sys.executable).parent / "mind"
+    if venv_bin.exists():
+        return str(venv_bin)
+    return shutil.which("mind") or "mind"
+
+
 def _make_hook_block() -> str:
-    mind_bin = shutil.which("mind") or "mind"
+    mind_bin = _find_mind_bin()
     return f"""\
 {HOOK_MARKER} — do not edit
 (cd "$(git rev-parse --show-toplevel)" && {mind_bin} sync) &

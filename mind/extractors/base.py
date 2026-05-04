@@ -11,9 +11,11 @@ class Message:
     tool: str        # "claude" | "gemini" | "cursor" | "codex" | "copilot"
 
     def truncated(self, max_chars: int) -> str:
+        if not max_chars or max_chars <= 0:
+            return self.text
         return self.text[:max_chars]
 
-    def format(self, max_chars: int = 500) -> str:
+    def format(self, max_chars: int = 0) -> str:
         return f"[{self.role.upper()}]: {self.truncated(max_chars)}"
 
 
