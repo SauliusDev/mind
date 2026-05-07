@@ -78,11 +78,13 @@ def main() -> None:
 
 @main.command()
 @click.option("--project-path", default=".", show_default=True)
-@click.option("--name", prompt="Project name")
+@click.option("--name", default=None, help="Project name (defaults to directory name)")
 @click.option("--llm", default="claude", show_default=True, help="LLM provider: claude|gemini|codex")
-def init(project_path: str, name: str, llm: str) -> None:
+def init(project_path: str, name: str | None, llm: str) -> None:
     """Initialize mind in a project."""
     root = Path(project_path).resolve()
+    if name is None:
+        name = root.name
     mind_dir = root / "_mind"
     mind_dir.mkdir(parents=True, exist_ok=True)
 
