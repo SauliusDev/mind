@@ -120,6 +120,31 @@ def init(project_path: str, name: str | None, llm: str) -> None:
     click.echo("  _mind/mind.toml   created")
     click.echo("  .git/hooks/post-commit  installed")
 
+    click.echo("")
+    click.secho(
+        "  ⚠  IMPORTANT — add this line to your agent instructions file",
+        fg="yellow",
+        bold=True,
+    )
+    click.secho(
+        "     (CLAUDE.md / AGENTS.md / .cursorrules / etc.) so every new",
+        fg="yellow",
+    )
+    click.secho(
+        "     AI session loads project context automatically:",
+        fg="yellow",
+    )
+    click.echo("")
+    click.secho(
+        '       Read _mind/mind.md before every conversation — it',
+        bold=True,
+    )
+    click.secho(
+        '       contains project context, history and lessons.',
+        bold=True,
+    )
+    click.echo("")
+
 
 @main.command()
 @click.option("--project-path", default=".", show_default=True)

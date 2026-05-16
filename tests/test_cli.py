@@ -19,6 +19,14 @@ def test_init_creates_mind_dir(tmp_path):
     assert (tmp_path / "_mind" / "index.yaml").exists()
     assert (tmp_path / "_mind" / "mind.toml").exists()
 
+def test_init_prints_mind_md_reminder(tmp_path):
+    _git_init(tmp_path)
+    runner = CliRunner()
+    result = runner.invoke(main, ["init", "--project-path", str(tmp_path), "--name", "test", "--llm", "claude"])
+    assert result.exit_code == 0, result.output
+    assert "Read _mind/mind.md before every conversation" in result.output
+    assert "add this line to your agent instructions file" in result.output
+
 def test_init_installs_hook(tmp_path):
     _git_init(tmp_path)
     runner = CliRunner()
