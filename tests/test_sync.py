@@ -34,14 +34,16 @@ def test_sync_calls_synthesis_when_new_content(tmp_path):
     transcripts.mkdir(parents=True)
     shutil.copy(FIXTURES / "claude_sample.jsonl", transcripts / "session1.jsonl")
 
-    with patch("mind.sync.load_or_extract") as mock_compress:
-        mock_compress.return_value = {
-            "corrections": [], "workflows": [], "decisions": [],
-            "friction": [], "lessons": [], "prompting_gaps": [],
-        }
+    empty = '{"corrections": [], "workflows": [], "decisions": [], ' \
+            '"friction": [], "lessons": [], "prompting_gaps": []}'
+    with patch("mind.compressor._run_haiku", return_value=empty) as mh:
         with patch("mind.sync.run_synthesis") as mock_synth:
-            with patch("mind.extractors.claude.ClaudeExtractor.find_project_path", return_value=str(transcripts)):
+            with patch("mind.extractors.claude.ClaudeExtractor.find_project_path",
+                       return_value=str(transcripts)):
                 run_sync(cfg, mind_dir, project_path=str(tmp_path))
+            # claude content actually flowed through the per-file pipeline ...
+            assert mh.called
+            # ... and that triggered synthesis:
             assert mock_synth.called
 
 
