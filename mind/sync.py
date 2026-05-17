@@ -6,7 +6,6 @@ from mind.compressor import (
     load_or_extract, aggregate_facets, prepare_file, run_llm_extraction,
 )
 from mind.cache import FacetCache
-from pathlib import Path as _Path
 from mind.config import Config
 from mind.extractors.claude import ClaudeExtractor
 from mind.extractors.gemini import GeminiExtractor
@@ -36,12 +35,12 @@ _SUPPORTS_LOOKBEHIND = {"claude"}
 def _sync_claude_per_file(cfg, mind_dir, project_path, extractor, transcript_dir):
     """Per-file delta pipeline for the claude extractor.
 
-    Returns (facets_list, total_messages, did_extract).
+    Returns (facets_list, total_messages).
     """
     cache = FacetCache(mind_dir / "facets")
     files = sorted(
-        _Path(transcript_dir).glob("*.jsonl"),
-        key=lambda p: p.stat().st_mtime,
+        Path(transcript_dir).glob("*.jsonl"),
+        key=lambda p: (p.stat().st_mtime, p.name),
         reverse=True,
     )
 
@@ -69,7 +68,7 @@ def _sync_claude_per_file(cfg, mind_dir, project_path, extractor, transcript_dir
         total_messages += len(prep.messages)
         extracted += 1
 
-    return facets_list, total_messages, extracted > 0
+    return facets_list, total_messages
 
 
 def run_sync(cfg: Config, mind_dir: Path, project_path: str) -> None:
@@ -90,7 +89,7 @@ def run_sync(cfg: Config, mind_dir: Path, project_path: str) -> None:
             continue
 
         if tool_name == "claude":
-            cfacets, cmsgs, cdid = _sync_claude_per_file(
+            cfacets, cmsgs = _sync_claude_per_file(
                 cfg, mind_dir, project_path, extractor, transcript_dir
             )
             all_facets.extend(cfacets)
