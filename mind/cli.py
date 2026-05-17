@@ -278,6 +278,15 @@ def status(project_path: str) -> None:
         if total == 0:
             click.echo(f"  {tool:<10} no transcripts found")
             continue
+        if tool == "claude":
+            cache_dir = root / "_mind" / "facets" / "claude"
+            tracked = len(list(cache_dir.glob("*.json"))) if cache_dir.exists() else 0
+            tracked = min(tracked, total)
+            queued = max(0, total - tracked)
+            pct = int(tracked / total * 100) if total else 100
+            detail = "  ·  ".join([f"{tracked} synced", f"{queued} queued"])
+            click.echo(f"  {tool:<10} {pct}% synced  ·  {detail}")
+            continue
         stale = _stale_count(known, tool, str(root))
         pending_new = total - tracked
 
