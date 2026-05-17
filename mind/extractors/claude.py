@@ -1,4 +1,5 @@
 from __future__ import annotations
+import hashlib
 import json
 import re
 from datetime import datetime, timezone
@@ -73,6 +74,37 @@ class ClaudeExtractor:
             return 0
         return len(list(Path(transcript_dir).glob("*.jsonl")))
 
+    def extract_delta(
+        self,
+        file_path: str,
+        from_line: int,
+        prev_fingerprint: str,
+        max_chars: int,
+    ) -> tuple[list[Message], int, str, bool]:
+        """
+        Returns (messages, new_line_count, boundary_fingerprint, was_rewritten).
+
+        from_line == 0 -> full scan. Otherwise scan only lines [from_line:],
+        unless the file shrank past from_line or the line at from_line-1 no
+        longer matches prev_fingerprint (rewrite) -> full re-scan.
+        """
+        raw = Path(file_path).read_text(errors="replace").splitlines()
+        total = len(raw)
+
+        was_rewritten = False
+        if from_line > 0:
+            if from_line > total or _fingerprint(raw[from_line - 1]) != prev_fingerprint:
+                was_rewritten = True
+
+        if from_line <= 0 or was_rewritten:
+            slice_lines = raw
+        else:
+            slice_lines = raw[from_line:]
+
+        messages = _messages_from_lines(slice_lines, max_chars)
+        boundary = _fingerprint(raw[total - 1]) if total > 0 else ""
+        return messages, total, boundary, was_rewritten
+
 
 def _iso_mtime(path: Path) -> str:
     ts = path.stat().st_mtime
@@ -122,3 +154,23 @@ def _get_text(content: str | list) -> str:
             if isinstance(block, dict) and block.get("type") == "text":
                 return block["text"].strip()
     return ""
+
+
+def _fingerprint(line: str) -> str:
+    return hashlib.sha256(line.encode("utf-8", errors="replace")).hexdigest()[:16]
+
+
+def _messages_from_lines(lines: list[str], max_chars: int) -> list[Message]:
+    messages: list[Message] = []
+    for line in lines:
+        line = line.strip()
+        if not line:
+            continue
+        try:
+            entry = json.loads(line)
+        except json.JSONDecodeError:
+            continue
+        msg = _extract_message(entry, max_chars)
+        if msg:
+            messages.append(msg)
+    return messages
