@@ -6,6 +6,10 @@ import subprocess
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from pathlib import Path
 
+from datetime import datetime, timezone
+from dataclasses import dataclass
+
+from mind.cache import FacetCache, FileFacets, empty_facets
 from mind.config import Config
 from mind.extractors.base import Message
 
@@ -78,7 +82,8 @@ def extract_facets(messages: list[Message], cfg: Config) -> dict:
     merged: dict[str, list] = {k: [] for k in _EMPTY_FACETS}
     completed = 0
     print(f"  extracting {total} chunk{'s' if total != 1 else ''}  0/{total}", end="", flush=True)
-    with ThreadPoolExecutor(max_workers=total) as executor:
+    cap = getattr(cfg, "extraction_concurrency", 50) or 50
+    with ThreadPoolExecutor(max_workers=max(1, min(total, cap))) as executor:
         futures = {executor.submit(_process_chunk, chunk, cfg): i for i, chunk in enumerate(chunks, 1)}
         for future in as_completed(futures):
             completed += 1
@@ -121,3 +126,83 @@ def load_or_extract(
     cache_dir.mkdir(parents=True, exist_ok=True)
     cache_file.write_text(json.dumps(facets))
     return facets
+
+
+def _count_user_messages(messages: list[Message]) -> int:
+    return sum(1 for m in messages if m.role == "user")
+
+
+def _merge_facets(a: dict, b: dict) -> dict:
+    out: dict[str, list[str]] = {}
+    for key in empty_facets():
+        out[key] = list(dict.fromkeys(list(a.get(key, [])) + list(b.get(key, []))))
+    return out
+
+
+@dataclass
+class FilePrep:
+    status: str               # "reuse" | "skipped" | "needs_llm"
+    file_facets: FileFacets
+    messages: list
+    prior_facets: dict
+    needs_save: bool
+
+
+def prepare_file(
+    tool: str,
+    file_path: str,
+    session_id: str,
+    extractor,
+    cache: FacetCache,
+    cfg: Config,
+) -> FilePrep:
+    from pathlib import Path
+    st = Path(file_path).stat()
+    cur_mtime = datetime.fromtimestamp(st.st_mtime, tz=timezone.utc).isoformat()
+    cur_size = st.st_size
+    cached = cache.load(tool, session_id)
+
+    if cached is not None and cached.mtime == cur_mtime and cached.size == cur_size:
+        return FilePrep("reuse", cached, [], {}, needs_save=False)
+
+    from_line = cached.lines_processed if cached else 0
+    prev_fp = cached.boundary_fingerprint if cached else ""
+    messages, new_lines, boundary, was_rewritten = extractor.extract_delta(
+        file_path, from_line, prev_fp, cfg.max_message_chars
+    )
+
+    if cached is not None and not was_rewritten:
+        prior_facets = dict(cached.facets)
+        prior_users = cached.user_msg_count
+    else:
+        prior_facets = {}
+        prior_users = 0
+
+    cum_users = prior_users + _count_user_messages(messages)
+    ff = FileFacets(
+        mtime=cur_mtime,
+        size=cur_size,
+        lines_processed=new_lines,
+        boundary_fingerprint=boundary,
+        user_msg_count=cum_users,
+        skipped=False,
+        facets=prior_facets if prior_facets else empty_facets(),
+    )
+
+    if cum_users < cfg.min_user_messages:
+        ff.skipped = True
+        ff.facets = empty_facets()
+        return FilePrep("skipped", ff, [], {}, needs_save=True)
+
+    if not messages:
+        return FilePrep("reuse", ff, [], {}, needs_save=True)
+
+    return FilePrep("needs_llm", ff, messages, prior_facets, needs_save=True)
+
+
+def run_llm_extraction(prep: FilePrep, cfg: Config) -> FileFacets:
+    delta = extract_facets(prep.messages, cfg)
+    ff = prep.file_facets
+    ff.facets = _merge_facets(prep.prior_facets, delta)
+    ff.skipped = False
+    return ff

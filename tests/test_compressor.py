@@ -135,3 +135,117 @@ def test_load_or_extract_creates_cache_on_miss(tmp_path):
 
     key = _cache_key(str(tmp_path), "claude", files)
     assert (cache_dir / f"{key}.json").exists()
+
+
+from mind.cache import FacetCache, FileFacets, EMPTY_FACETS as CACHE_EMPTY
+from mind.compressor import (
+    _count_user_messages, _merge_facets, prepare_file, run_llm_extraction,
+)
+from mind.extractors.claude import ClaudeExtractor
+
+
+def _jsonl(path, n_user):
+    lines = ['{"type":"permission-mode","permissionMode":"x","sessionId":"s"}']
+    for i in range(n_user):
+        lines.append(
+            '{"type":"user","message":{"role":"user","content":'
+            f'[{{"type":"text","text":"u{i}"}}]}},"uuid":"u{i}","timestamp":"2026-04-18T09:0{i}:00Z"}}'
+        )
+    path.write_text("\n".join(lines) + "\n")
+
+
+def test_count_user_messages():
+    msgs = [Message("user", "a", "t", "claude"),
+            Message("assistant", "b", "t", "claude"),
+            Message("user", "c", "t", "claude")]
+    assert _count_user_messages(msgs) == 2
+
+
+def test_merge_facets_dedupes_per_key():
+    a = {**CACHE_EMPTY, "corrections": ["x"]}
+    b = {**CACHE_EMPTY, "corrections": ["x", "y"], "decisions": ["d"]}
+    out = _merge_facets(a, b)
+    assert out["corrections"] == ["x", "y"]
+    assert out["decisions"] == ["d"]
+
+
+def test_prepare_file_reuse_on_mtime_match(tmp_path):
+    cfg = _make_config(tmp_path)
+    f = tmp_path / "s.jsonl"; _jsonl(f, 3)
+    cache = FacetCache(tmp_path / "facets")
+    ext = ClaudeExtractor()
+    prep1 = prepare_file("claude", str(f), "s", ext, cache, cfg)
+    assert prep1.status == "needs_llm"
+    cache.save("claude", "s", run_llm_extraction(prep1, cfg))
+    prep2 = prepare_file("claude", str(f), "s", ext, cache, cfg)
+    assert prep2.status == "reuse"
+    assert prep2.needs_save is False
+
+
+def test_prepare_file_skips_under_threshold(tmp_path):
+    cfg = _make_config(tmp_path)
+    f = tmp_path / "s.jsonl"; _jsonl(f, 1)
+    cache = FacetCache(tmp_path / "facets")
+    prep = prepare_file("claude", str(f), "s", ClaudeExtractor(), cache, cfg)
+    assert prep.status == "skipped"
+    assert prep.file_facets.skipped is True
+    assert prep.needs_save is True
+
+
+def test_prepare_file_delta_merges_with_prior(tmp_path):
+    cfg = _make_config(tmp_path)
+    f = tmp_path / "s.jsonl"; _jsonl(f, 2)
+    cache = FacetCache(tmp_path / "facets")
+    ext = ClaudeExtractor()
+    with patch("mind.compressor._run_haiku") as mh:
+        mh.return_value = json.dumps({**EMPTY_FACETS, "decisions": ["first"]})
+        cache.save("claude", "s", run_llm_extraction(
+            prepare_file("claude", str(f), "s", ext, cache, cfg), cfg))
+    with open(f, "a") as fh:
+        fh.write('{"type":"user","message":{"role":"user","content":'
+                 '[{"type":"text","text":"u2"}]},"uuid":"u2","timestamp":"2026-04-18T09:09:00Z"}\n')
+    prep = prepare_file("claude", str(f), "s", ext, cache, cfg)
+    assert prep.status == "needs_llm"
+    assert prep.prior_facets["decisions"] == ["first"]
+    assert [m.text for m in prep.messages] == ["u2"]
+    with patch("mind.compressor._run_haiku") as mh:
+        mh.return_value = json.dumps({**EMPTY_FACETS, "decisions": ["second"]})
+        ff = run_llm_extraction(prep, cfg)
+    assert ff.facets["decisions"] == ["first", "second"]
+
+
+def test_prepare_file_rewrite_replaces_not_merges(tmp_path):
+    cfg = _make_config(tmp_path)
+    f = tmp_path / "s.jsonl"; _jsonl(f, 4)
+    cache = FacetCache(tmp_path / "facets")
+    ext = ClaudeExtractor()
+    with patch("mind.compressor._run_haiku") as mh:
+        mh.return_value = json.dumps({**EMPTY_FACETS, "decisions": ["old"]})
+        cache.save("claude", "s", run_llm_extraction(
+            prepare_file("claude", str(f), "s", ext, cache, cfg), cfg))
+    _jsonl(f, 2)
+    prep = prepare_file("claude", str(f), "s", ext, cache, cfg)
+    assert prep.status == "needs_llm"
+    assert prep.prior_facets == {}
+    with patch("mind.compressor._run_haiku") as mh:
+        mh.return_value = json.dumps({**EMPTY_FACETS, "decisions": ["new"]})
+        ff = run_llm_extraction(prep, cfg)
+    assert ff.facets["decisions"] == ["new"]
+
+
+def test_extract_facets_concurrency_capped(tmp_path):
+    cfg = _make_config(tmp_path)
+    cfg.extraction_concurrency = 2
+    cfg.chunk_size = 1
+    msgs = _messages(5)
+    seen = {}
+    real_tpe = __import__("concurrent.futures", fromlist=["ThreadPoolExecutor"]).ThreadPoolExecutor
+    with patch("mind.compressor.ThreadPoolExecutor") as mte:
+        def _tpe(max_workers):
+            seen.setdefault("mw", max_workers)
+            return real_tpe(max_workers=max_workers)
+        mte.side_effect = _tpe
+        with patch("mind.compressor._run_haiku") as mh:
+            mh.return_value = json.dumps(EMPTY_FACETS)
+            extract_facets(msgs, cfg)
+    assert seen["mw"] == 2
