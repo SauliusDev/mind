@@ -1,8 +1,10 @@
 from pathlib import Path
 from unittest.mock import patch
 import shutil
+import json as _json
 from mind.sync import run_sync
 from mind.config import Config
+from mind.cache import FacetCache
 
 FIXTURES = Path(__file__).parent / "fixtures"
 
@@ -51,27 +53,78 @@ def test_sync_skips_synthesis_when_nothing_new(tmp_path):
 
 
 def test_sync_no_message_cap(tmp_path):
-    """run_sync must not truncate messages — all new files go to compressor."""
+    """run_sync must not truncate: with an ample cap every claude session
+    file reaches the compressor and gets its own cache entry."""
     mind_dir, cfg = _make_project(tmp_path)
+    cfg.max_extractions_per_sync = 50
     transcripts = tmp_path / ".claude_projects" / "-home-ubuntu-test-project"
     transcripts.mkdir(parents=True)
-
-    # Write 5 separate session files
     sample = FIXTURES / "claude_sample.jsonl"
     for i in range(5):
         shutil.copy(sample, transcripts / f"session{i}.jsonl")
 
-    captured_messages = []
-
-    def capture(project_path, tool, files, messages, cfg, cache_dir):
-        captured_messages.extend(messages)
-        return {"corrections": [], "workflows": [], "decisions": [],
-                "friction": [], "lessons": [], "prompting_gaps": []}
-
-    with patch("mind.sync.load_or_extract", side_effect=capture):
+    empty = '{"corrections": [], "workflows": [], "decisions": [], ' \
+            '"friction": [], "lessons": [], "prompting_gaps": []}'
+    with patch("mind.compressor._run_haiku", return_value=empty) as mh:
         with patch("mind.sync.run_synthesis"):
-            with patch("mind.extractors.claude.ClaudeExtractor.find_project_path", return_value=str(transcripts)):
+            with patch("mind.extractors.claude.ClaudeExtractor.find_project_path",
+                       return_value=str(transcripts)):
                 run_sync(cfg, mind_dir, project_path=str(tmp_path))
 
-    # All messages from all files must reach the compressor (no cap)
-    assert len(captured_messages) > 0
+    # All 5 session files processed (none capped/truncated away):
+    cache_files = list((mind_dir / "facets" / "claude").glob("*.json"))
+    assert len(cache_files) == 5
+    # And each reached the compressor (Haiku invoked at least once per session):
+    assert mh.call_count >= 5
+
+
+def _claude_dir(tmp_path):
+    d = tmp_path / ".claude_projects" / "-home-ubuntu-test-project"
+    d.mkdir(parents=True, exist_ok=True)
+    return d
+
+
+def _session(d, name, n_user):
+    lines = ['{"type":"permission-mode","permissionMode":"x","sessionId":"s"}']
+    for i in range(n_user):
+        lines.append(
+            '{"type":"user","message":{"role":"user","content":'
+            f'[{{"type":"text","text":"u{i}"}}]}},"uuid":"u{i}","timestamp":"2026-04-18T09:0{i}:00Z"}}'
+        )
+    (d / name).write_text("\n".join(lines) + "\n")
+
+
+def test_sync_caps_extractions_and_leaves_rest_pending(tmp_path):
+    mind_dir, cfg = _make_project(tmp_path)
+    cfg.max_extractions_per_sync = 2
+    d = _claude_dir(tmp_path)
+    for i in range(5):
+        _session(d, f"s{i}.jsonl", 3)
+    with patch("mind.extractors.claude.ClaudeExtractor.find_project_path", return_value=str(d)):
+        with patch("mind.sync.run_synthesis"):
+            with patch("mind.compressor._run_haiku") as mh:
+                mh.return_value = _json.dumps({
+                    "corrections": [], "workflows": [], "decisions": [],
+                    "friction": [], "lessons": [], "prompting_gaps": [],
+                })
+                run_sync(cfg, mind_dir, project_path=str(tmp_path))
+    cache_files = list((mind_dir / "facets" / "claude").glob("*.json"))
+    assert len(cache_files) == 2
+
+
+def test_sync_raising_cap_picks_up_pending(tmp_path):
+    mind_dir, cfg = _make_project(tmp_path)
+    cfg.max_extractions_per_sync = 2
+    d = _claude_dir(tmp_path)
+    for i in range(5):
+        _session(d, f"s{i}.jsonl", 3)
+    empty = _json.dumps({"corrections": [], "workflows": [], "decisions": [],
+                         "friction": [], "lessons": [], "prompting_gaps": []})
+    with patch("mind.extractors.claude.ClaudeExtractor.find_project_path", return_value=str(d)):
+        with patch("mind.sync.run_synthesis"):
+            with patch("mind.compressor._run_haiku", return_value=empty):
+                run_sync(cfg, mind_dir, project_path=str(tmp_path))
+                cfg.max_extractions_per_sync = 50
+                run_sync(cfg, mind_dir, project_path=str(tmp_path))
+    cache_files = list((mind_dir / "facets" / "claude").glob("*.json"))
+    assert len(cache_files) == 5

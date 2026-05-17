@@ -2,7 +2,11 @@ from __future__ import annotations
 from datetime import datetime, timezone
 from pathlib import Path
 
-from mind.compressor import load_or_extract, aggregate_facets
+from mind.compressor import (
+    load_or_extract, aggregate_facets, prepare_file, run_llm_extraction,
+)
+from mind.cache import FacetCache
+from pathlib import Path as _Path
 from mind.config import Config
 from mind.extractors.claude import ClaudeExtractor
 from mind.extractors.gemini import GeminiExtractor
@@ -29,6 +33,45 @@ _NEEDS_PROJECT_PATH = {"copilot", "codex", "opencode"}
 _SUPPORTS_LOOKBEHIND = {"claude"}
 
 
+def _sync_claude_per_file(cfg, mind_dir, project_path, extractor, transcript_dir):
+    """Per-file delta pipeline for the claude extractor.
+
+    Returns (facets_list, total_messages, did_extract).
+    """
+    cache = FacetCache(mind_dir / "facets")
+    files = sorted(
+        _Path(transcript_dir).glob("*.jsonl"),
+        key=lambda p: p.stat().st_mtime,
+        reverse=True,
+    )
+
+    facets_list: list[dict] = []
+    total_messages = 0
+    extracted = 0
+    cap = cfg.max_extractions_per_sync or 50
+
+    for fp in files:
+        prep = prepare_file("claude", str(fp), fp.stem, extractor, cache, cfg)
+        if prep.status == "reuse":
+            if prep.needs_save:
+                cache.save("claude", fp.stem, prep.file_facets)
+            facets_list.append(prep.file_facets.facets)
+            continue
+        if prep.status == "skipped":
+            cache.save("claude", fp.stem, prep.file_facets)
+            continue
+        # needs_llm
+        if extracted >= cap:
+            continue
+        ff = run_llm_extraction(prep, cfg)
+        cache.save("claude", fp.stem, ff)
+        facets_list.append(ff.facets)
+        total_messages += len(prep.messages)
+        extracted += 1
+
+    return facets_list, total_messages, extracted > 0
+
+
 def run_sync(cfg: Config, mind_dir: Path, project_path: str) -> None:
     index = Index.load(mind_dir)
     cache_dir = mind_dir / "facets"
@@ -44,6 +87,18 @@ def run_sync(cfg: Config, mind_dir: Path, project_path: str) -> None:
         extractor = extractor_cls()
         transcript_dir = extractor.find_project_path(project_path)
         if not transcript_dir:
+            continue
+
+        if tool_name == "claude":
+            cfacets, cmsgs, cdid = _sync_claude_per_file(
+                cfg, mind_dir, project_path, extractor, transcript_dir
+            )
+            all_facets.extend(cfacets)
+            total_messages += cmsgs
+            if cfacets:
+                index.sources[tool_name] = SourceIndex(path=transcript_dir, files={})
+                index.write(mind_dir)
+                updated_sources[tool_name] = index.sources[tool_name]
             continue
 
         known = index.known_files(tool_name)
