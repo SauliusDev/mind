@@ -150,6 +150,14 @@ def run_sync(cfg: Config, mind_dir: Path, project_path: str) -> None:
         print("✓ mind up to date")
         return
 
+    if total_messages == 0 and index.sync_count > 0:
+        # All facets came from cache reuse and a successful synthesis already
+        # exists (sync_count increments only after a completed synthesis, and
+        # is 0 after `mind rebuild`/init or an interrupted run). The aggregate
+        # is unchanged, so re-running synthesis would just reproduce mind.md.
+        print("✓ mind up to date")
+        return
+
     aggregated = aggregate_facets(all_facets)
     current_mind = (mind_dir / "mind.md").read_text() if (mind_dir / "mind.md").exists() else ""
     prompt = build_prompt(cfg, aggregated, current_mind)

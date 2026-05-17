@@ -5,6 +5,7 @@ import json as _json
 from mind.sync import run_sync
 from mind.config import Config
 from mind.cache import FacetCache
+from mind.index import Index
 
 FIXTURES = Path(__file__).parent / "fixtures"
 
@@ -130,3 +131,42 @@ def test_sync_raising_cap_picks_up_pending(tmp_path):
                 run_sync(cfg, mind_dir, project_path=str(tmp_path))
     cache_files = list((mind_dir / "facets" / "claude").glob("*.json"))
     assert len(cache_files) == 5
+
+
+def test_sync_skips_synthesis_when_all_reuse_and_already_synced(tmp_path):
+    mind_dir, cfg = _make_project(tmp_path)
+    d = _claude_dir(tmp_path)
+    for i in range(2):
+        _session(d, f"s{i}.jsonl", 3)
+    empty = _json.dumps({"corrections": [], "workflows": [], "decisions": [],
+                         "friction": [], "lessons": [], "prompting_gaps": []})
+    with patch("mind.extractors.claude.ClaudeExtractor.find_project_path", return_value=str(d)):
+        with patch("mind.compressor._run_haiku", return_value=empty):
+            with patch("mind.sync.run_synthesis") as synth1:
+                run_sync(cfg, mind_dir, project_path=str(tmp_path))
+                assert synth1.called  # first sync synthesizes
+            # second sync: no file changes -> all reuse, sync_count>0 -> skip synthesis
+            with patch("mind.sync.run_synthesis") as synth2:
+                run_sync(cfg, mind_dir, project_path=str(tmp_path))
+                assert not synth2.called
+
+
+def test_sync_synthesizes_when_sync_count_zero_even_if_all_cached(tmp_path):
+    mind_dir, cfg = _make_project(tmp_path)
+    d = _claude_dir(tmp_path)
+    _session(d, "s0.jsonl", 3)
+    empty = _json.dumps({"corrections": [], "workflows": [], "decisions": [],
+                         "friction": [], "lessons": [], "prompting_gaps": []})
+    with patch("mind.extractors.claude.ClaudeExtractor.find_project_path", return_value=str(d)):
+        with patch("mind.compressor._run_haiku", return_value=empty):
+            with patch("mind.sync.run_synthesis"):
+                run_sync(cfg, mind_dir, project_path=str(tmp_path))  # warms cache, sync_count -> 1
+        # Simulate `mind rebuild`/interrupted: cache stays warm but sync_count reset to 0
+        idx = Index.load(mind_dir)
+        idx.sync_count = 0
+        idx.write(mind_dir)
+        with patch("mind.compressor._run_haiku", return_value=empty):
+            with patch("mind.sync.run_synthesis") as synth:
+                run_sync(cfg, mind_dir, project_path=str(tmp_path))
+                # all files are cache-reuse now, but sync_count==0 -> MUST synthesize
+                assert synth.called

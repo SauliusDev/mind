@@ -7,7 +7,7 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 from pathlib import Path
 
 from datetime import datetime, timezone
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 
 from mind.cache import FacetCache, FileFacets, empty_facets
 from mind.config import Config
@@ -201,7 +201,8 @@ def prepare_file(
 
 def run_llm_extraction(prep: FilePrep, cfg: Config) -> FileFacets:
     delta = extract_facets(prep.messages, cfg)
-    ff = prep.file_facets
-    ff.facets = _merge_facets(prep.prior_facets, delta)
-    ff.skipped = False
-    return ff
+    return replace(
+        prep.file_facets,
+        facets=_merge_facets(prep.prior_facets, delta),
+        skipped=False,
+    )

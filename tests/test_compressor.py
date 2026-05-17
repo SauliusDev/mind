@@ -250,3 +250,21 @@ def test_extract_facets_concurrency_capped(tmp_path):
             mh.return_value = json.dumps(EMPTY_FACETS)
             extract_facets(msgs, cfg)
     assert seen["mw"] == 2
+
+
+def test_run_llm_extraction_does_not_mutate_prep(tmp_path):
+    cfg = _make_config(tmp_path)
+    f = tmp_path / "s.jsonl"; _jsonl(f, 3)
+    cache = FacetCache(tmp_path / "facets")
+    prep = prepare_file("claude", str(f), "s", ClaudeExtractor(), cache, cfg)
+    assert prep.status == "needs_llm"
+    before_obj = prep.file_facets
+    before_facets = {k: list(v) for k, v in prep.file_facets.facets.items()}
+    with patch("mind.compressor._run_haiku") as mh:
+        mh.return_value = json.dumps({**EMPTY_FACETS, "decisions": ["d1"]})
+        result = run_llm_extraction(prep, cfg)
+    # returned object is a NEW FileFacets, prep.file_facets untouched
+    assert result is not before_obj
+    assert prep.file_facets.facets == before_facets
+    assert result.facets["decisions"] == ["d1"]
+    assert result.skipped is False
