@@ -47,6 +47,9 @@ class Config:
     max_message_chars: int = 0
     max_conversations_lookbehind: int = 0
     mind_max_lines: int = 150
+    extraction_concurrency: int = 50
+    max_extractions_per_sync: int = 50
+    min_user_messages: int = 2
 
     @classmethod
     def load(cls, project_path: Path) -> "Config":
@@ -72,4 +75,10 @@ class Config:
             max_message_chars=limits.get("max_message_chars", 0),
             max_conversations_lookbehind=limits.get("max_conversations_lookbehind", 0),
             mind_max_lines=limits.get("mind_max_lines", 150),
+            extraction_concurrency=limits.get("extraction_concurrency", 50),
+            max_extractions_per_sync=limits.get(
+                "max_extractions_per_sync",
+                limits.get("max_conversations_lookbehind", 0) or 50,
+            ),
+            min_user_messages=limits.get("min_user_messages", 2),
         )
