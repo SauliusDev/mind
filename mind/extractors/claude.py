@@ -1,5 +1,6 @@
 from __future__ import annotations
 import json
+import re
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -9,7 +10,12 @@ _BASE_DIR = Path.home() / ".claude" / "projects"
 
 
 def _slug_from_path(project_path: str) -> str:
-    return project_path.replace("/", "-").lstrip("-")
+    # Claude Code encodes the project cwd into its ~/.claude/projects/<dir>
+    # name by replacing every non-alphanumeric character (/, _, ., etc.)
+    # with "-". Mirror that exactly, otherwise projects whose absolute path
+    # contains "_" or "." resolve to a directory that does not exist and
+    # mind silently finds no transcripts.
+    return re.sub(r"[^A-Za-z0-9]", "-", project_path).lstrip("-")
 
 
 class ClaudeExtractor:

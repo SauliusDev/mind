@@ -54,3 +54,13 @@ def test_find_project_path_slug_decode(tmp_path):
     result = extractor.find_project_path("/home/ubuntu/myproject")
     assert result is not None
     assert "myproject" in result
+
+
+def test_find_project_path_slug_handles_underscores_and_dots(tmp_path):
+    # Claude Code maps "_" and "." to "-" in the project dir name.
+    proj = tmp_path / "projects" / "-home-ubuntu-etsy-bot-crafted-by-cloth-v1-0"
+    proj.mkdir(parents=True)
+    extractor = ClaudeExtractor(base_dir=str(tmp_path / "projects"))
+    result = extractor.find_project_path("/home/ubuntu/etsy_bot/crafted_by_cloth/v1.0")
+    assert result is not None
+    assert result.endswith("-home-ubuntu-etsy-bot-crafted-by-cloth-v1-0")
