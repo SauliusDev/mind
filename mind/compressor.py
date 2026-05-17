@@ -82,7 +82,7 @@ def extract_facets(messages: list[Message], cfg: Config) -> dict:
     merged: dict[str, list] = {k: [] for k in _EMPTY_FACETS}
     completed = 0
     print(f"  extracting {total} chunk{'s' if total != 1 else ''}  0/{total}", end="", flush=True)
-    cap = getattr(cfg, "extraction_concurrency", 50) or 50
+    cap = cfg.extraction_concurrency or 50
     with ThreadPoolExecutor(max_workers=max(1, min(total, cap))) as executor:
         futures = {executor.submit(_process_chunk, chunk, cfg): i for i, chunk in enumerate(chunks, 1)}
         for future in as_completed(futures):
@@ -156,7 +156,6 @@ def prepare_file(
     cache: FacetCache,
     cfg: Config,
 ) -> FilePrep:
-    from pathlib import Path
     st = Path(file_path).stat()
     cur_mtime = datetime.fromtimestamp(st.st_mtime, tz=timezone.utc).isoformat()
     cur_size = st.st_size

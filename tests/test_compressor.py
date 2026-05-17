@@ -227,6 +227,7 @@ def test_prepare_file_rewrite_replaces_not_merges(tmp_path):
     prep = prepare_file("claude", str(f), "s", ext, cache, cfg)
     assert prep.status == "needs_llm"
     assert prep.prior_facets == {}
+    assert prep.file_facets.user_msg_count == 2  # cum count resets on rewrite, not accumulated
     with patch("mind.compressor._run_haiku") as mh:
         mh.return_value = json.dumps({**EMPTY_FACETS, "decisions": ["new"]})
         ff = run_llm_extraction(prep, cfg)
