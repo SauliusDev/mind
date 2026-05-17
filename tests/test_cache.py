@@ -51,3 +51,15 @@ def test_save_is_atomic_no_tmp_left(tmp_path):
     tool_dir = tmp_path / "facets" / "claude"
     assert (tool_dir / "sess1.json").exists()
     assert not any(p.name.endswith(".tmp") for p in tool_dir.iterdir())
+
+
+def test_wrong_field_types_returns_none(tmp_path):
+    cache = FacetCache(tmp_path / "facets")
+    p = tmp_path / "facets" / "claude" / "wt.json"
+    p.parent.mkdir(parents=True)
+    p.write_text(json.dumps({
+        "mtime": "t", "size": "not-an-int", "lines_processed": 1,
+        "boundary_fingerprint": "fp", "user_msg_count": 1,
+        "skipped": False, "facets": {},
+    }))
+    assert cache.load("claude", "wt") is None

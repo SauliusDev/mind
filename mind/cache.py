@@ -54,6 +54,16 @@ class FacetCache:
             return None
         if not isinstance(data, dict) or not _SCHEMA_KEYS.issubset(data):
             return None
+        if not (
+            isinstance(data["mtime"], str)
+            and isinstance(data["size"], int)
+            and isinstance(data["lines_processed"], int)
+            and isinstance(data["boundary_fingerprint"], str)
+            and isinstance(data["user_msg_count"], int)
+            and isinstance(data["skipped"], bool)
+            and isinstance(data["facets"], dict)
+        ):
+            return None
         return FileFacets(**{k: data[k] for k in _SCHEMA_KEYS})
 
     def save(self, tool: str, session_id: str, ff: FileFacets) -> None:
